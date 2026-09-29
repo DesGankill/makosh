@@ -110,7 +110,8 @@ public class HubTests : IClassFixture<MakoshWebFactory>
     {
         var names = _factory.Services.GetRequiredService<Agent>().Tools.Select(tool => tool.Definition.Name).ToList();
         Assert.Contains("send_file", names);
-        Assert.DoesNotContain("look_screen", names);
+        Assert.Contains("look_screen", names);
+        Assert.DoesNotContain("not_a_tool", names);
     }
 
     [Fact]

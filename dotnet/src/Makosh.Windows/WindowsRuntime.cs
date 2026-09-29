@@ -5,5 +5,5 @@ namespace Makosh.Windows;
 /// </summary>
 public static class WindowsRuntime
 {
-    public const string TargetFrameworkMoniker = "net8.0-windows";
+    public const string TargetFrameworkMoniker = "net8.0-windows10.0.19041.0";
 }

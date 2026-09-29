@@ -117,7 +117,7 @@ public static class ToolCatalog
     ];
 
     /// <summary>
-    /// Local PC tools. <see cref="LookScreen"/> stays unregistered until M6.
+    /// Local PC tools. <see cref="LookScreen"/> is registered when <see cref="LocalToolServices.Screen"/> is set.
     /// </summary>
     public static IReadOnlyList<ITool> LocalTools(LocalToolServices local)
     {
@@ -136,6 +136,15 @@ public static class ToolCatalog
                 args.GetProperty("path").GetString() ?? "",
                 args.GetProperty("device").GetString() ?? "",
                 ct)));
+        }
+
+        if (local.Screen is not null)
+        {
+            tools.Add(new AsyncDelegateTool(LookScreen, (args, ct) =>
+            {
+                var mode = args.TryGetProperty("mode", out var modeEl) ? modeEl.GetString() ?? "ocr" : "ocr";
+                return local.Screen.LookAsync(mode, ct);
+            }));
         }
 
         return tools;

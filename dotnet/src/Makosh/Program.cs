@@ -20,6 +20,22 @@ builder.Services.AddSingleton<IAppHost>(sp => sp.GetRequiredService<WindowsDeskt
 builder.Services.AddSingleton<IShell>(sp => sp.GetRequiredService<WindowsDesktop>());
 builder.Services.AddSingleton<IKeyboard>(sp => sp.GetRequiredService<WindowsDesktop>());
 builder.Services.AddSingleton<IFileSender, HubFileSender>();
+builder.Services.AddSingleton<IScreenCapture, WindowsScreenCapture>();
+builder.Services.AddSingleton<IOcrService, WindowsOcrService>();
+builder.Services.AddSingleton<IJpegEncoder, WindowsJpegEncoder>();
+builder.Services.AddSingleton(sp => new VisionRateLimiter(sp.GetRequiredService<MakoshSettings>().VisionMaxPerHour));
+builder.Services.AddSingleton(sp =>
+{
+    var settings = sp.GetRequiredService<MakoshSettings>();
+    IVisionClient? vision = settings.HasChatModel ? new OpenAIChatClient(settings) : null;
+    return new ScreenLook(
+        sp.GetRequiredService<IScreenCapture>(),
+        sp.GetRequiredService<IOcrService>(),
+        sp.GetRequiredService<IJpegEncoder>(),
+        sp.GetRequiredService<VisionRateLimiter>(),
+        settings,
+        vision);
+});
 builder.Services.AddSingleton(sp => new LocalToolServices
 {
     Paths = sp.GetRequiredService<PathGuard>(),
@@ -28,6 +44,7 @@ builder.Services.AddSingleton(sp => new LocalToolServices
     Keyboard = sp.GetRequiredService<IKeyboard>(),
     Devices = sp.GetRequiredService<DeviceRegistry>(),
     Files = sp.GetRequiredService<IFileSender>(),
+    Screen = sp.GetRequiredService<ScreenLook>(),
 });
 builder.Services.AddSingleton(sp =>
 {

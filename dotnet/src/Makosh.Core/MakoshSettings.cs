@@ -13,6 +13,9 @@ public sealed class MakoshSettings
     public string ApiKey { get; init; } = "";
     public string BaseUrl { get; init; } = "https://openrouter.ai/api/v1";
     public string Model { get; init; } = "openai/gpt-4o-mini";
+    public string VisionModel { get; init; } = "openai/gpt-4o-mini";
+    public int VisionMaxPerHour { get; init; } = 6;
+    public int VisionMaxWidth { get; init; } = 768;
     public string DataDirectory { get; init; } = "data";
 
     public string InboxDirectory => Path.Combine(DataDirectory, "inbox");
@@ -22,6 +25,7 @@ public sealed class MakoshSettings
     public static MakoshSettings Load(IEnumerable<string>? extraSearchRoots = null)
     {
         var fileValues = EnvFile.ReadNearest(extraSearchRoots);
+        var model = Read("OPENAI_MODEL", fileValues, "openai/gpt-4o-mini");
 
         return new MakoshSettings
         {
@@ -31,7 +35,10 @@ public sealed class MakoshSettings
             DeviceName = Read("MAKOSH_DEVICE_NAME", fileValues, "PC"),
             ApiKey = Read("OPENAI_API_KEY", fileValues, ""),
             BaseUrl = Read("OPENAI_BASE_URL", fileValues, "https://openrouter.ai/api/v1"),
-            Model = Read("OPENAI_MODEL", fileValues, "openai/gpt-4o-mini"),
+            Model = model,
+            VisionModel = Read("VISION_MODEL", fileValues, model),
+            VisionMaxPerHour = ParsePositive(Read("VISION_MAX_PER_HOUR", fileValues, "6"), 6),
+            VisionMaxWidth = ParsePositive(Read("VISION_MAX_WIDTH", fileValues, "768"), 768),
             DataDirectory = ResolveDataDirectory(extraSearchRoots),
         };
     }
@@ -78,4 +85,7 @@ public sealed class MakoshSettings
 
     static int ParsePort(string raw) =>
         int.TryParse(raw, out var port) && port is > 0 and < 65536 ? port : 8787;
+
+    static int ParsePositive(string raw, int fallback) =>
+        int.TryParse(raw, out var value) && value > 0 ? value : fallback;
 }

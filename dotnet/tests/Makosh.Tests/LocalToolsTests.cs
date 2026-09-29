@@ -39,7 +39,7 @@ public sealed class LocalToolsTests : IDisposable
     }
 
     [Fact]
-    public void Agent_create_registers_local_tools_but_not_vision_or_send_file()
+    public void Agent_create_registers_local_tools_but_not_send_file_or_look_screen_until_wired()
     {
         var memory = new Memory(Path.Combine(_root, "memory.sqlite"));
         _memories.Add(memory);
@@ -53,6 +53,34 @@ public sealed class LocalToolsTests : IDisposable
 
         Assert.DoesNotContain("look_screen", names);
         Assert.DoesNotContain("send_file", names);
+    }
+
+    [Fact]
+    public void Look_screen_is_registered_when_screen_service_is_present()
+    {
+        var memory = new Memory(Path.Combine(_root, "memory-vision.sqlite"));
+        _memories.Add(memory);
+        var local = Services(new FakeAppHost(), new FakeShell(), new FakeKeyboard(), new DeviceRegistry());
+        local = new LocalToolServices
+        {
+            Paths = local.Paths,
+            Apps = local.Apps,
+            Shell = local.Shell,
+            Keyboard = local.Keyboard,
+            Devices = local.Devices,
+            Screen = new ScreenLook(
+                new FakeScreenCapture(ScreenImage.Solid(4, 4, 0, 0, 0)),
+                new FakeOcrService("x"),
+                new FakeJpegEncoder(),
+                new VisionRateLimiter(6),
+                new MakoshSettings()),
+        };
+        var names = ToolCatalog.LocalTools(local).Select(tool => tool.Definition.Name).ToList();
+        Assert.Contains("look_screen", names);
+        var schema = ToolCatalog.LookScreen.ParametersJson;
+        Assert.Contains("\"ocr\"", schema, StringComparison.Ordinal);
+        Assert.Contains("\"vision\"", schema, StringComparison.Ordinal);
+        Assert.Contains("mode", schema, StringComparison.Ordinal);
     }
 
     [Fact]

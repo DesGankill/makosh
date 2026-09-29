@@ -100,6 +100,33 @@ public class SettingsTests
             File.Delete(temp);
         }
     }
+
+    [Fact]
+    public void Vision_limits_come_from_environment()
+    {
+        var previousModel = Environment.GetEnvironmentVariable("VISION_MODEL");
+        var previousHour = Environment.GetEnvironmentVariable("VISION_MAX_PER_HOUR");
+        var previousWidth = Environment.GetEnvironmentVariable("VISION_MAX_WIDTH");
+        var previousChat = Environment.GetEnvironmentVariable("OPENAI_MODEL");
+        try
+        {
+            Environment.SetEnvironmentVariable("OPENAI_MODEL", "openai/gpt-4o-mini");
+            Environment.SetEnvironmentVariable("VISION_MODEL", "openai/gpt-4o");
+            Environment.SetEnvironmentVariable("VISION_MAX_PER_HOUR", "3");
+            Environment.SetEnvironmentVariable("VISION_MAX_WIDTH", "512");
+            var settings = MakoshSettings.Load();
+            Assert.Equal("openai/gpt-4o", settings.VisionModel);
+            Assert.Equal(3, settings.VisionMaxPerHour);
+            Assert.Equal(512, settings.VisionMaxWidth);
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable("VISION_MODEL", previousModel);
+            Environment.SetEnvironmentVariable("VISION_MAX_PER_HOUR", previousHour);
+            Environment.SetEnvironmentVariable("VISION_MAX_WIDTH", previousWidth);
+            Environment.SetEnvironmentVariable("OPENAI_MODEL", previousChat);
+        }
+    }
 }
 
 public class MakoshWebFactory : WebApplicationFactory<Program>
