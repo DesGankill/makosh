@@ -46,4 +46,14 @@ public sealed class FakeChatClient : IChatClient
 
         return Task.FromResult((LlmResponse)step);
     }
+
+    public void Reset(params object[] steps)
+    {
+        Calls.Clear();
+        _steps.Clear();
+        foreach (var step in steps)
+        {
+            _steps.Enqueue(step);
+        }
+    }
 }

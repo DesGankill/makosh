@@ -117,17 +117,29 @@ public static class ToolCatalog
     ];
 
     /// <summary>
-    /// Local PC tools for M4. <see cref="SendFile"/> and <see cref="LookScreen"/> stay unregistered until M5/M6.
+    /// Local PC tools. <see cref="LookScreen"/> stays unregistered until M6.
     /// </summary>
-    public static IReadOnlyList<ITool> LocalTools(LocalToolServices local) =>
-    [
-        new DelegateTool(ListDevices, _ => local.Devices.ListText()),
-        new DelegateTool(ListFiles, args => local.Paths.ListFiles(args.TryGetProperty("path", out var path) ? path.GetString() ?? "" : "")),
-        new DelegateTool(OpenApp, args => AppLauncher.Open(args.GetProperty("name").GetString() ?? "", local.Apps)),
-        new DelegateTool(OpenPath, args => PathOpener.Open(args.GetProperty("path").GetString() ?? "", local.Paths, local.Shell)),
-        new DelegateTool(TypeText, args => KeyboardComposer.TypeText(args.GetProperty("text").GetString() ?? "", local.Keyboard)),
-        new DelegateTool(PressHotkey, args => KeyboardComposer.PressHotkey(args.GetProperty("keys").GetString() ?? "", local.Keyboard)),
-    ];
+    public static IReadOnlyList<ITool> LocalTools(LocalToolServices local)
+    {
+        var tools = new List<ITool>
+        {
+            new DelegateTool(ListDevices, _ => local.Devices.ListText()),
+            new DelegateTool(ListFiles, args => local.Paths.ListFiles(args.TryGetProperty("path", out var path) ? path.GetString() ?? "" : "")),
+            new DelegateTool(OpenApp, args => AppLauncher.Open(args.GetProperty("name").GetString() ?? "", local.Apps)),
+            new DelegateTool(OpenPath, args => PathOpener.Open(args.GetProperty("path").GetString() ?? "", local.Paths, local.Shell)),
+            new DelegateTool(TypeText, args => KeyboardComposer.TypeText(args.GetProperty("text").GetString() ?? "", local.Keyboard)),
+            new DelegateTool(PressHotkey, args => KeyboardComposer.PressHotkey(args.GetProperty("keys").GetString() ?? "", local.Keyboard)),
+        };
+        if (local.Files is not null)
+        {
+            tools.Add(new AsyncDelegateTool(SendFile, (args, ct) => local.Files.SendAsync(
+                args.GetProperty("path").GetString() ?? "",
+                args.GetProperty("device").GetString() ?? "",
+                ct)));
+        }
+
+        return tools;
+    }
 
     sealed class RememberTool(Memory memory) : ITool
     {
@@ -158,5 +170,13 @@ public static class ToolCatalog
 
         public Task<string> ExecuteAsync(JsonElement arguments, CancellationToken cancellationToken) =>
             Task.FromResult(execute(arguments));
+    }
+
+    sealed class AsyncDelegateTool(ToolDefinition definition, Func<JsonElement, CancellationToken, Task<string>> execute) : ITool
+    {
+        public ToolDefinition Definition => definition;
+
+        public Task<string> ExecuteAsync(JsonElement arguments, CancellationToken cancellationToken) =>
+            execute(arguments, cancellationToken);
     }
 }

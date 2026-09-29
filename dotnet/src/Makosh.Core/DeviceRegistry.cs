@@ -5,7 +5,19 @@ public sealed class Device
     public required string DeviceId { get; init; }
     public required string Name { get; init; }
     public required string Kind { get; init; }
+    public Guid SessionId { get; init; } = Guid.NewGuid();
+    public IDeviceConnection? Connection { get; init; }
     public DateTimeOffset LastSeen { get; init; } = DateTimeOffset.UtcNow;
+}
+
+public interface IDeviceConnection
+{
+    Task SendJsonAsync(object payload, CancellationToken cancellationToken = default);
+}
+
+public interface IFileSender
+{
+    Task<string> SendAsync(string path, string deviceHint, CancellationToken cancellationToken = default);
 }
 
 public sealed class DeviceRegistry
@@ -37,6 +49,37 @@ public sealed class DeviceRegistry
         {
             _devices.Remove(deviceId);
         }
+    }
+
+    public bool DropIfSession(string deviceId, Guid sessionId)
+    {
+        lock (_gate)
+        {
+            if (!_devices.TryGetValue(deviceId, out var current) || current.SessionId != sessionId)
+            {
+                return false;
+            }
+
+            _devices.Remove(deviceId);
+            return true;
+        }
+    }
+
+    public async Task<bool> SendJsonAsync(string deviceId, object payload, CancellationToken cancellationToken = default)
+    {
+        IDeviceConnection? connection;
+        lock (_gate)
+        {
+            connection = _devices.TryGetValue(deviceId, out var device) ? device.Connection : null;
+        }
+
+        if (connection is null)
+        {
+            return false;
+        }
+
+        await connection.SendJsonAsync(payload, cancellationToken);
+        return true;
     }
 
     public Device? Get(string deviceId)

@@ -2,6 +2,8 @@ using System.Text.Json;
 using Makosh.Core;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
+using Microsoft.AspNetCore.TestHost;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 
 namespace Makosh.Tests;
@@ -50,11 +52,12 @@ public class HealthTests : IClassFixture<MakoshWebFactory>
     }
 
     [Fact]
-    public async Task Root_serves_m1_html()
+    public async Task Root_serves_python_compatible_ui()
     {
         var html = await _client.GetStringAsync("/");
-        Assert.Contains("Makosh (.NET M1)", html, StringComparison.Ordinal);
-        Assert.Contains("/api/health", html, StringComparison.Ordinal);
+        Assert.Contains("Makosh", html, StringComparison.Ordinal);
+        Assert.Contains("MAKOSH_TOKEN", html, StringComparison.Ordinal);
+        Assert.Contains("/ws", html, StringComparison.Ordinal);
     }
 }
 
@@ -101,17 +104,33 @@ public class SettingsTests
 
 public class MakoshWebFactory : WebApplicationFactory<Program>
 {
+    public FakeChatClient Fake { get; } = new(FakeChatClient.Text("Ответ."));
+    public string DataDir { get; }
+
     public MakoshWebFactory()
     {
+        DataDir = Path.Combine(Path.GetTempPath(), "makosh-m5-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(DataDir);
         Environment.SetEnvironmentVariable("ASPNETCORE_ENVIRONMENT", "Testing");
         Environment.SetEnvironmentVariable("MAKOSH_TOKEN", "m1-test-token");
         Environment.SetEnvironmentVariable("MAKOSH_DEVICE_NAME", "M1-Test");
         Environment.SetEnvironmentVariable("MAKOSH_HOST", "127.0.0.1");
         Environment.SetEnvironmentVariable("OPENAI_API_KEY", "");
+        Environment.SetEnvironmentVariable("MAKOSH_DATA_DIR", DataDir);
     }
 
-    protected override void ConfigureWebHost(Microsoft.AspNetCore.Hosting.IWebHostBuilder builder)
+    protected override void ConfigureWebHost(IWebHostBuilder builder)
     {
         builder.UseEnvironment("Testing");
+        builder.ConfigureTestServices(services =>
+        {
+            services.AddSingleton(sp =>
+            {
+                var memory = sp.GetRequiredService<Memory>();
+                var settings = sp.GetRequiredService<MakoshSettings>();
+                var local = sp.GetRequiredService<LocalToolServices>();
+                return new Agent(memory, settings, Fake, ToolCatalog.MemoryTools(memory).Concat(ToolCatalog.LocalTools(local)));
+            });
+        });
     }
 }

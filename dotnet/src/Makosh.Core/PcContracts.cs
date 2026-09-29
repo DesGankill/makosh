@@ -23,4 +23,5 @@ public sealed class LocalToolServices
     public required IShell Shell { get; init; }
     public required IKeyboard Keyboard { get; init; }
     public required DeviceRegistry Devices { get; init; }
+    public IFileSender? Files { get; init; }
 }

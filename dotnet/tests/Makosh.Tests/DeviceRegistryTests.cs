@@ -53,4 +53,18 @@ public class DeviceRegistryTests
         Assert.Null(devices.Get("d1"));
         Assert.Equal("Сейчас никто не подключён, кроме этого хаба.", devices.ListText());
     }
+
+    [Fact]
+    public void Drop_old_session_does_not_remove_replaced_device()
+    {
+        var devices = new DeviceRegistry();
+        var first = new Device { DeviceId = "d1", Name = "A", Kind = "pc", SessionId = Guid.NewGuid() };
+        var second = new Device { DeviceId = "d1", Name = "B", Kind = "pc", SessionId = Guid.NewGuid() };
+        devices.Register(first);
+        devices.Register(second);
+        Assert.False(devices.DropIfSession("d1", first.SessionId));
+        Assert.Equal("B", devices.Get("d1")?.Name);
+        Assert.True(devices.DropIfSession("d1", second.SessionId));
+        Assert.Null(devices.Get("d1"));
+    }
 }
