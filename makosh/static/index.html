@@ -1,0 +1,303 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <title>Makosh</title>
+  <style>
+    :root { color-scheme: dark; }
+    body { margin: 0; font-family: Segoe UI, sans-serif; background: #101114; color: #eee; }
+    header { padding: 16px 20px; border-bottom: 1px solid #2a2d33; }
+    main { max-width: 720px; margin: 0 auto; padding: 16px 16px 96px; }
+    #log { min-height: 40vh; white-space: pre-wrap; line-height: 1.4; }
+    .me { color: #8ec8ff; }
+    .bot { color: #c8f0c2; }
+    .row { display: flex; gap: 8px; margin-top: 12px; flex-wrap: wrap; }
+    input, button { font-size: 16px; padding: 12px; border-radius: 10px; border: 1px solid #333; background: #1b1d22; color: #eee; }
+    input { flex: 1; min-width: 140px; }
+    button { cursor: pointer; }
+    .mic { background: #3d2a12; }
+    .mic.on { background: #6b2; color: #111; }
+    #status { font-size: 14px; color: #bbb; }
+  </style>
+</head>
+<body>
+  <header>
+    <strong>Makosh</strong>
+    <div id="status">введи токен из .env</div>
+  </header>
+  <main>
+    <p id="httpsHint"></p>
+    <div class="row">
+      <input id="token" type="password" placeholder="токен" autocomplete="off" />
+      <input id="name" placeholder="имя устройства" value="Android" />
+    </div>
+    <div id="log"></div>
+    <div class="row">
+      <input id="text" placeholder="Скажи или напиши…" />
+      <button id="send">Отправить</button>
+      <button id="mic" class="mic">Голос</button>
+    </div>
+  </main>
+  <script>
+    const logEl = document.getElementById("log");
+    const statusEl = document.getElementById("status");
+    const tokenEl = document.getElementById("token");
+    const nameEl = document.getElementById("name");
+    const textEl = document.getElementById("text");
+    tokenEl.value = localStorage.getItem("makosh_token") || "";
+    nameEl.value = localStorage.getItem("makosh_name") || (/Android/i.test(navigator.userAgent) ? "Android" : "PC");
+
+    let ws;
+    let reconnectTimer;
+    let lastVoice = "";
+    let audioCtx = null;
+    const player = new Audio();
+    player.preload = "auto";
+
+    async function unlockAudio() {
+      const AC = window.AudioContext || window.webkitAudioContext;
+      if (!audioCtx) audioCtx = new AC();
+      if (audioCtx.state === "suspended") await audioCtx.resume();
+    }
+    async function speak(text, audioUrl) {
+      await unlockAudio();
+      if (audioUrl) {
+        try {
+          const res = await fetch(audioUrl);
+          const buf = await res.arrayBuffer();
+          const decoded = await audioCtx.decodeAudioData(buf.slice(0));
+          const src = audioCtx.createBufferSource();
+          src.buffer = decoded;
+          src.connect(audioCtx.destination);
+          src.start();
+          return;
+        } catch (e) {
+          try {
+            player.src = audioUrl;
+            await player.play();
+            return;
+          } catch (e2) {}
+        }
+      }
+      fallbackSpeak(text);
+    }
+
+    function uid() {
+      if (crypto.randomUUID) return crypto.randomUUID();
+      return "dev-" + Math.random().toString(16).slice(2) + Date.now();
+    }
+    function token() { return tokenEl.value.trim(); }
+    function add(cls, text) {
+      const p = document.createElement("p");
+      p.className = cls;
+      p.textContent = text;
+      logEl.appendChild(p);
+      logEl.scrollTop = logEl.scrollHeight;
+    }
+    function fallbackSpeak(text) {
+      if (!window.speechSynthesis) return;
+      const u = new SpeechSynthesisUtterance(text);
+      u.lang = "ru-RU";
+      speechSynthesis.cancel();
+      speechSynthesis.speak(u);
+    }
+    function showReply(msg, fetchVoice) {
+      if (msg.type === "audio") {
+        speak(lastVoice, msg.audio);
+        return;
+      }
+      const text = msg.text || msg.reply || "";
+      lastVoice = text;
+      add("bot", "Makosh: " + text);
+    }
+    async function queueVoice(text) {
+      try {
+        const res = await fetch("/api/speak?token=" + encodeURIComponent(token()), {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "X-Makosh-Token": token()
+          },
+          body: JSON.stringify({ text })
+        });
+        const data = await res.json();
+        if (data.audio) speak(text, data.audio);
+      } catch (e) {}
+    }
+    function connect() {
+      localStorage.setItem("makosh_token", token());
+      localStorage.setItem("makosh_name", nameEl.value);
+      if (!token()) {
+        statusEl.textContent = "введи токен, иначе телефон не отправит команды";
+        return;
+      }
+      const proto = location.protocol === "https:" ? "wss" : "ws";
+      try { if (ws) ws.close(); } catch (e) {}
+      ws = new WebSocket(`${proto}://${location.host}/ws`);
+      ws.onopen = () => {
+        ws.send(JSON.stringify({
+          token: token(),
+          name: nameEl.value,
+          kind: /Android/i.test(navigator.userAgent) ? "android" : "pc",
+          device_id: localStorage.getItem("makosh_id") || uid()
+        }));
+      };
+      ws.onmessage = (ev) => {
+        const msg = JSON.parse(ev.data);
+        if (msg.device_id) localStorage.setItem("makosh_id", msg.device_id);
+        if (msg.type === "hello") statusEl.textContent = "онлайн как " + nameEl.value;
+        if (msg.type === "audio") showReply(msg, false);
+        if (msg.type === "reply" || (msg.reply && msg.type !== "audio")) showReply(msg, false);
+        if (msg.type === "file") {
+          add("bot", "Файл: " + msg.name);
+          const a = document.createElement("a");
+          a.href = msg.url + "?token=" + encodeURIComponent(token());
+          a.textContent = "скачать " + msg.name;
+          logEl.appendChild(a);
+        }
+        if (msg.type === "error") statusEl.textContent = msg.text;
+      };
+      ws.onclose = () => {
+        statusEl.textContent = "нет сокета, отправка пойдёт обычным HTTP";
+        clearTimeout(reconnectTimer);
+        reconnectTimer = setTimeout(connect, 2500);
+      };
+    }
+    async function sendHttp(text) {
+      const res = await fetch("/api/chat?token=" + encodeURIComponent(token()), {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "X-Makosh-Token": token()
+        },
+        body: JSON.stringify({ text, speak: true, device_name: nameEl.value })
+      });
+      if (!res.ok) {
+        add("bot", "Makosh: сервер ответил " + res.status + ". Проверь токен.");
+        return;
+      }
+      showReply(await res.json(), true);
+    }
+    async function sendChat() {
+      unlockAudio();
+      const text = textEl.value.trim();
+      if (!text) return;
+      if (!token()) {
+        statusEl.textContent = "сначала вставь токен";
+        return;
+      }
+      add("me", "Ты: " + text);
+      textEl.value = "";
+      if (ws && ws.readyState === 1) {
+        ws.send(JSON.stringify({ type: "chat", text, speak: true }));
+        return;
+      }
+      try { await sendHttp(text); }
+      catch (e) { add("bot", "Makosh: телефон не достучался до хаба. " + e); }
+    }
+    document.getElementById("send").onclick = sendChat;
+    textEl.addEventListener("keydown", (e) => { if (e.key === "Enter") sendChat(); });
+    tokenEl.addEventListener("change", connect);
+    document.body.addEventListener("touchstart", unlockAudio, { once: true });
+    connect();
+    document.body.addEventListener("click", unlockAudio);
+
+    const micBtn = document.getElementById("mic");
+    let recState = { stream: null, ctx: null, proc: null, chunks: [], recording: false };
+
+    function encodeWav(chunks, sampleRate) {
+      let len = 0;
+      chunks.forEach((c) => { len += c.length; });
+      const buf = new Float32Array(len);
+      let off = 0;
+      chunks.forEach((c) => { buf.set(c, off); off += c.length; });
+      const pcm = new Int16Array(buf.length);
+      for (let i = 0; i < buf.length; i++) {
+        const s = Math.max(-1, Math.min(1, buf[i] || 0));
+        pcm[i] = s < 0 ? s * 0x8000 : s * 0x7fff;
+      }
+      const bytes = pcm.length * 2;
+      const wav = new ArrayBuffer(44 + bytes);
+      const v = new DataView(wav);
+      const w = (o, s) => { for (let i = 0; i < s.length; i++) v.setUint8(o + i, s.charCodeAt(i)); };
+      w(0, "RIFF"); v.setUint32(4, 36 + bytes, true); w(8, "WAVE"); w(12, "fmt ");
+      v.setUint32(16, 16, true); v.setUint16(20, 1, true); v.setUint16(22, 1, true);
+      v.setUint32(24, sampleRate, true); v.setUint32(28, sampleRate * 2, true);
+      v.setUint16(32, 2, true); v.setUint16(34, 16, true); w(36, "data"); v.setUint32(40, bytes, true);
+      for (let i = 0; i < pcm.length; i++) v.setInt16(44 + i * 2, pcm[i], true);
+      return new Blob([wav], { type: "audio/wav" });
+    }
+
+    async function stopMic() {
+      if (!recState.recording) return;
+      recState.recording = false;
+      micBtn.classList.remove("on");
+      const rate = recState.ctx.sampleRate || 44100;
+      try { recState.proc.disconnect(); recState.ctx.close(); } catch (e) {}
+      recState.stream.getTracks().forEach((t) => t.stop());
+      const blob = encodeWav(recState.chunks, rate);
+      recState.chunks = [];
+      const fd = new FormData();
+      fd.append("file", blob, "voice.wav");
+      const res = await fetch("/api/stt?token=" + encodeURIComponent(token()), {
+        method: "POST",
+        headers: { "X-Makosh-Token": token() },
+        body: fd
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        add("bot", "Makosh: не разобрал голос. " + (data.detail || res.status));
+        return;
+      }
+      const said = (data.text || "").trim();
+      if (!said) {
+        add("bot", "Makosh: ничего не услышал, повтори.");
+        return;
+      }
+      textEl.value = said;
+      sendChat();
+    }
+
+    async function startMic() {
+      unlockAudio();
+      if (!token()) {
+        statusEl.textContent = "сначала вставь токен";
+        return;
+      }
+      if (recState.recording) {
+        await stopMic();
+        return;
+      }
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        const ctx = new (window.AudioContext || window.webkitAudioContext)();
+        const src = ctx.createMediaStreamSource(stream);
+        const proc = ctx.createScriptProcessor(4096, 1, 1);
+        recState = { stream, ctx, proc, chunks: [], recording: true };
+        proc.onaudioprocess = (ev) => {
+          if (recState.recording) recState.chunks.push(new Float32Array(ev.inputBuffer.getChannelData(0)));
+        };
+        src.connect(proc);
+        const mute = ctx.createGain();
+        mute.gain.value = 0;
+        proc.connect(mute);
+        mute.connect(ctx.destination);
+        micBtn.classList.add("on");
+        statusEl.textContent = "слушаю, нажми Голос ещё раз чтобы отправить";
+        setTimeout(() => { if (recState.recording) stopMic(); }, 15000);
+      } catch (err) {
+        micBtn.classList.remove("on");
+        const insecure = location.protocol !== "https:" && location.hostname !== "localhost" && location.hostname !== "127.0.0.1";
+        if (insecure) {
+          const url = "https://" + location.hostname + ":8443";
+          add("bot", "Makosh: с телефона микрофон только по HTTPS. Открой " + url + " , нажми Дополнительно → перейти на сайт, вставь токен.");
+        } else {
+          add("bot", "Makosh: нет доступа к микрофону. Разреши его в браузере.");
+        }
+      }
+    }
+    micBtn.onclick = startMic;
+  </script>
+</body>
+</html>
