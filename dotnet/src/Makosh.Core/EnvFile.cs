@@ -16,33 +16,42 @@ static class EnvFile
             return explicitPath;
         }
 
-        var roots = new List<string>();
+        var besideApp = Path.Combine(AppContext.BaseDirectory, ".env");
+        if (File.Exists(besideApp))
+        {
+            return besideApp;
+        }
+
         if (extraSearchRoots is not null)
         {
-            roots.AddRange(extraSearchRoots);
-        }
-
-        var cwd = Directory.GetCurrentDirectory();
-        if (!string.IsNullOrEmpty(cwd))
-        {
-            roots.Add(cwd);
-        }
-
-        var baseDir = AppContext.BaseDirectory;
-        if (!string.IsNullOrEmpty(baseDir))
-        {
-            roots.Add(baseDir);
-        }
-
-        foreach (var root in roots)
-        {
-            for (var dir = new DirectoryInfo(root); dir is not null; dir = dir.Parent)
+            foreach (var root in extraSearchRoots)
             {
-                var candidate = Path.Combine(dir.FullName, ".env");
-                if (File.Exists(candidate))
+                var found = WalkParents(root);
+                if (found is not null)
                 {
-                    return candidate;
+                    return found;
                 }
+            }
+
+            return null;
+        }
+
+        return WalkParents(Directory.GetCurrentDirectory());
+    }
+
+    static string? WalkParents(string root)
+    {
+        if (string.IsNullOrWhiteSpace(root) || !Directory.Exists(root))
+        {
+            return null;
+        }
+
+        for (var dir = new DirectoryInfo(Path.GetFullPath(root)); dir is not null; dir = dir.Parent)
+        {
+            var candidate = Path.Combine(dir.FullName, ".env");
+            if (File.Exists(candidate))
+            {
+                return candidate;
             }
         }
 

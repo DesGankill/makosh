@@ -21,7 +21,7 @@ public sealed class WindowsOcrService : IOcrService
             throw new InvalidOperationException("Windows OCR недоступен (нет языкового пакета).");
         }
 
-        var bitmap = ToSoftwareBitmap(image);
+        using var bitmap = ToSoftwareBitmap(image);
         var result = await engine.RecognizeAsync(bitmap).AsTask(cancellationToken);
         return string.Join("\n", result.Lines.Select(line => line.Text)).Trim();
     }
@@ -72,7 +72,7 @@ public sealed class WindowsJpegEncoder : IJpegEncoder
         await encoder.FlushAsync().AsTask(cancellationToken);
         stream.Seek(0);
         var size = (uint)stream.Size;
-        var reader = new DataReader(stream.GetInputStreamAt(0));
+        using var reader = new DataReader(stream.GetInputStreamAt(0));
         await reader.LoadAsync(size).AsTask(cancellationToken);
         var bytes = new byte[size];
         reader.ReadBytes(bytes);

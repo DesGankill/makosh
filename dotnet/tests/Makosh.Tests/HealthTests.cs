@@ -127,6 +127,62 @@ public class SettingsTests
             Environment.SetEnvironmentVariable("OPENAI_MODEL", previousChat);
         }
     }
+
+    [Fact]
+    public void Data_directory_follows_env_file_folder()
+    {
+        var previousFile = Environment.GetEnvironmentVariable("MAKOSH_ENV_FILE");
+        var previousData = Environment.GetEnvironmentVariable("MAKOSH_DATA_DIR");
+        var previousDevice = Environment.GetEnvironmentVariable("MAKOSH_DEVICE_NAME");
+        var root = Path.Combine(Path.GetTempPath(), "makosh-m7-env-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(root);
+        var envPath = Path.Combine(root, ".env");
+        File.WriteAllText(envPath, "MAKOSH_DEVICE_NAME=BesideEnv\n");
+        try
+        {
+            Environment.SetEnvironmentVariable("MAKOSH_DATA_DIR", null);
+            Environment.SetEnvironmentVariable("MAKOSH_DEVICE_NAME", null);
+            Environment.SetEnvironmentVariable("MAKOSH_ENV_FILE", envPath);
+            var settings = MakoshSettings.Load();
+            Assert.Equal(Path.Combine(root, "data"), settings.DataDirectory);
+            Assert.Equal("BesideEnv", settings.DeviceName);
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable("MAKOSH_ENV_FILE", previousFile);
+            Environment.SetEnvironmentVariable("MAKOSH_DATA_DIR", previousData);
+            Environment.SetEnvironmentVariable("MAKOSH_DEVICE_NAME", previousDevice);
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
+    [Fact]
+    public void Data_directory_does_not_follow_current_directory_when_env_is_missing()
+    {
+        var previousFile = Environment.GetEnvironmentVariable("MAKOSH_ENV_FILE");
+        var previousData = Environment.GetEnvironmentVariable("MAKOSH_DATA_DIR");
+        var previousCwd = Directory.GetCurrentDirectory();
+        var cwd = Path.Combine(Path.GetTempPath(), "makosh-m7-cwd-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(cwd);
+        var missing = Path.Combine(cwd, "no-such.env");
+        try
+        {
+            Environment.SetEnvironmentVariable("MAKOSH_DATA_DIR", null);
+            Environment.SetEnvironmentVariable("MAKOSH_ENV_FILE", missing);
+            Directory.SetCurrentDirectory(cwd);
+            var settings = MakoshSettings.Load([]);
+            var expected = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "data"));
+            Assert.Equal(expected, settings.DataDirectory);
+            Assert.False(settings.DataDirectory.StartsWith(cwd, StringComparison.OrdinalIgnoreCase));
+        }
+        finally
+        {
+            Directory.SetCurrentDirectory(previousCwd);
+            Environment.SetEnvironmentVariable("MAKOSH_ENV_FILE", previousFile);
+            Environment.SetEnvironmentVariable("MAKOSH_DATA_DIR", previousData);
+            Directory.Delete(cwd, recursive: true);
+        }
+    }
 }
 
 public class MakoshWebFactory : WebApplicationFactory<Program>

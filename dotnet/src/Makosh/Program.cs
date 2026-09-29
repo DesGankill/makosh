@@ -2,12 +2,20 @@ using Makosh;
 using Makosh.Core;
 using Makosh.Windows;
 
-var builder = WebApplication.CreateBuilder(args);
 var settings = MakoshSettings.Load();
 Directory.CreateDirectory(settings.DataDirectory);
 Directory.CreateDirectory(settings.InboxDirectory);
 
-if (!builder.Environment.IsEnvironment("Testing"))
+var testing = string.Equals(Environment.GetEnvironmentVariable("ASPNETCORE_ENVIRONMENT"), "Testing", StringComparison.OrdinalIgnoreCase);
+var builder = testing
+    ? WebApplication.CreateBuilder(args)
+    : WebApplication.CreateBuilder(new WebApplicationOptions
+    {
+        Args = args,
+        ContentRootPath = AppContext.BaseDirectory,
+    });
+
+if (!testing)
 {
     builder.WebHost.UseUrls($"http://{BindHost(settings.Host)}:{settings.Port}");
 }

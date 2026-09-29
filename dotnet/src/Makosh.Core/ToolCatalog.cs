@@ -4,7 +4,6 @@ namespace Makosh.Core;
 
 /// <summary>
 /// OpenAI function schemas matching <c>makosh/agent.py</c> TOOL_SCHEMAS.
-/// Windows tools are registered in later milestones; memory tools are created here.
 /// </summary>
 public static class ToolCatalog
 {

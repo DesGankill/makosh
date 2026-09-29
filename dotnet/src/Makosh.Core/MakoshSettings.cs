@@ -1,8 +1,8 @@
 namespace Makosh.Core;
 
 /// <summary>
-/// M1 settings: MAKOSH_* from the process environment, then the repo <c>.env</c>.
-/// Existing environment variables win, matching python-dotenv defaults.
+/// Settings from the process environment, then the nearest <c>.env</c>.
+/// Environment variables win, matching python-dotenv defaults.
 /// </summary>
 public sealed class MakoshSettings
 {
@@ -61,7 +61,7 @@ public sealed class MakoshSettings
             }
         }
 
-        return Path.GetFullPath(Path.Combine(Directory.GetCurrentDirectory(), "data"));
+        return Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "data"));
     }
 
     public static bool TokenMatches(string? provided, string expected) =>
