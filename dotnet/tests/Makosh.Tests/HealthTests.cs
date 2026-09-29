@@ -1,0 +1,117 @@
+using System.Text.Json;
+using Makosh.Core;
+using Microsoft.AspNetCore.Hosting;
+using Microsoft.AspNetCore.Mvc.Testing;
+using Microsoft.Extensions.Hosting;
+
+namespace Makosh.Tests;
+
+public class HealthTests : IClassFixture<MakoshWebFactory>
+{
+    readonly HttpClient _client;
+
+    public HealthTests(MakoshWebFactory factory)
+    {
+        _client = factory.CreateClient();
+    }
+
+    [Fact]
+    public async Task Health_does_not_require_token_or_api_key()
+    {
+        var response = await _client.GetAsync("/api/health");
+        response.EnsureSuccessStatusCode();
+
+        using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var root = doc.RootElement;
+        Assert.Equal("makosh", root.GetProperty("ok").GetString());
+        Assert.Equal("M1-Test", root.GetProperty("device").GetString());
+        Assert.Equal("dotnet", root.GetProperty("runtime").GetString());
+    }
+
+    [Fact]
+    public async Task Token_check_rejects_missing_and_wrong_token()
+    {
+        var missing = await _client.GetAsync("/api/token-check");
+        Assert.Equal(System.Net.HttpStatusCode.Unauthorized, missing.StatusCode);
+
+        using var wrong = new HttpRequestMessage(HttpMethod.Get, "/api/token-check");
+        wrong.Headers.Add("x-makosh-token", "nope");
+        var denied = await _client.SendAsync(wrong);
+        Assert.Equal(System.Net.HttpStatusCode.Unauthorized, denied.StatusCode);
+    }
+
+    [Fact]
+    public async Task Token_check_accepts_configured_token()
+    {
+        using var request = new HttpRequestMessage(HttpMethod.Get, "/api/token-check");
+        request.Headers.Add("x-makosh-token", "m1-test-token");
+        var response = await _client.SendAsync(request);
+        response.EnsureSuccessStatusCode();
+    }
+
+    [Fact]
+    public async Task Root_serves_m1_html()
+    {
+        var html = await _client.GetStringAsync("/");
+        Assert.Contains("Makosh (.NET M1)", html, StringComparison.Ordinal);
+        Assert.Contains("/api/health", html, StringComparison.Ordinal);
+    }
+}
+
+public class SettingsTests
+{
+    [Fact]
+    public void Environment_overrides_env_file()
+    {
+        var previous = Environment.GetEnvironmentVariable("MAKOSH_DEVICE_NAME");
+        try
+        {
+            Environment.SetEnvironmentVariable("MAKOSH_DEVICE_NAME", "FromEnv");
+            var settings = MakoshSettings.Load();
+            Assert.Equal("FromEnv", settings.DeviceName);
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable("MAKOSH_DEVICE_NAME", previous);
+        }
+    }
+
+    [Fact]
+    public void Env_file_is_read_when_variable_is_absent()
+    {
+        var previousFile = Environment.GetEnvironmentVariable("MAKOSH_ENV_FILE");
+        var previousDevice = Environment.GetEnvironmentVariable("MAKOSH_DEVICE_NAME");
+        var temp = Path.Combine(Path.GetTempPath(), "makosh-m1-settings.env");
+        File.WriteAllText(temp, "MAKOSH_DEVICE_NAME=FromFile\n");
+        try
+        {
+            Environment.SetEnvironmentVariable("MAKOSH_DEVICE_NAME", null);
+            Environment.SetEnvironmentVariable("MAKOSH_ENV_FILE", temp);
+            var settings = MakoshSettings.Load();
+            Assert.Equal("FromFile", settings.DeviceName);
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable("MAKOSH_ENV_FILE", previousFile);
+            Environment.SetEnvironmentVariable("MAKOSH_DEVICE_NAME", previousDevice);
+            File.Delete(temp);
+        }
+    }
+}
+
+public class MakoshWebFactory : WebApplicationFactory<Program>
+{
+    public MakoshWebFactory()
+    {
+        Environment.SetEnvironmentVariable("ASPNETCORE_ENVIRONMENT", "Testing");
+        Environment.SetEnvironmentVariable("MAKOSH_TOKEN", "m1-test-token");
+        Environment.SetEnvironmentVariable("MAKOSH_DEVICE_NAME", "M1-Test");
+        Environment.SetEnvironmentVariable("MAKOSH_HOST", "127.0.0.1");
+        Environment.SetEnvironmentVariable("OPENAI_API_KEY", "");
+    }
+
+    protected override void ConfigureWebHost(Microsoft.AspNetCore.Hosting.IWebHostBuilder builder)
+    {
+        builder.UseEnvironment("Testing");
+    }
+}

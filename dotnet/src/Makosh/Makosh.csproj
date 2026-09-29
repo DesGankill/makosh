@@ -1,0 +1,16 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+
+  <PropertyGroup>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <RootNamespace>Makosh</RootNamespace>
+    <AssemblyName>Makosh</AssemblyName>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Makosh.Core\Makosh.Core.csproj" />
+    <ProjectReference Include="..\Makosh.Windows\Makosh.Windows.csproj" />
+  </ItemGroup>
+
+</Project>

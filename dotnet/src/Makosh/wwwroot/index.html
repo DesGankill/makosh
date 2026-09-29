@@ -1,0 +1,30 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Makosh M1</title>
+  <style>
+    :root { color-scheme: dark; }
+    body { margin: 0; font-family: Segoe UI, sans-serif; background: #101114; color: #eee; }
+    main { max-width: 640px; margin: 0 auto; padding: 24px; }
+    a { color: #8ec8ff; }
+    code { background: #1b1d22; padding: 2px 6px; border-radius: 6px; }
+    #health { white-space: pre-wrap; margin-top: 16px; }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>Makosh (.NET M1)</h1>
+    <p>Каркас Kestrel. Python-версия не затронута. Чат, память и инструменты появятся позже.</p>
+    <p>Проверка: <a href="/api/health">/api/health</a> — без токена. <code>GET /api/token-check</code> требует заголовок <code>x-makosh-token</code>.</p>
+    <pre id="health">загрузка health…</pre>
+  </main>
+  <script>
+    fetch("/api/health")
+      .then((r) => r.text())
+      .then((text) => { document.getElementById("health").textContent = text; })
+      .catch((err) => { document.getElementById("health").textContent = String(err); });
+  </script>
+</body>
+</html>
