@@ -31,9 +31,14 @@ public sealed class Agent
 
     public IReadOnlyList<ITool> Tools => _tools;
 
-    public static Agent Create(Memory memory, MakoshSettings settings, IEnumerable<ITool>? extraTools = null)
+    public static Agent Create(Memory memory, MakoshSettings settings, LocalToolServices? local = null, IEnumerable<ITool>? extraTools = null)
     {
         var tools = new List<ITool>(ToolCatalog.MemoryTools(memory));
+        if (local is not null)
+        {
+            tools.AddRange(ToolCatalog.LocalTools(local));
+        }
+
         if (extraTools is not null)
         {
             tools.AddRange(extraTools);

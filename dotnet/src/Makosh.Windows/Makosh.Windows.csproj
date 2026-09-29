@@ -11,4 +11,8 @@
     <ProjectReference Include="..\Makosh.Core\Makosh.Core.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <InternalsVisibleTo Include="Makosh.Tests" />
+  </ItemGroup>
+
 </Project>

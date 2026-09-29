@@ -116,6 +116,19 @@ public static class ToolCatalog
         new RecallTool(memory),
     ];
 
+    /// <summary>
+    /// Local PC tools for M4. <see cref="SendFile"/> and <see cref="LookScreen"/> stay unregistered until M5/M6.
+    /// </summary>
+    public static IReadOnlyList<ITool> LocalTools(LocalToolServices local) =>
+    [
+        new DelegateTool(ListDevices, _ => local.Devices.ListText()),
+        new DelegateTool(ListFiles, args => local.Paths.ListFiles(args.TryGetProperty("path", out var path) ? path.GetString() ?? "" : "")),
+        new DelegateTool(OpenApp, args => AppLauncher.Open(args.GetProperty("name").GetString() ?? "", local.Apps)),
+        new DelegateTool(OpenPath, args => PathOpener.Open(args.GetProperty("path").GetString() ?? "", local.Paths, local.Shell)),
+        new DelegateTool(TypeText, args => KeyboardComposer.TypeText(args.GetProperty("text").GetString() ?? "", local.Keyboard)),
+        new DelegateTool(PressHotkey, args => KeyboardComposer.PressHotkey(args.GetProperty("keys").GetString() ?? "", local.Keyboard)),
+    ];
+
     sealed class RememberTool(Memory memory) : ITool
     {
         public ToolDefinition Definition => Remember;
@@ -137,5 +150,13 @@ public static class ToolCatalog
             var query = arguments.TryGetProperty("query", out var q) ? q.GetString() ?? "" : "";
             return Task.FromResult(memory.Recall(query));
         }
+    }
+
+    sealed class DelegateTool(ToolDefinition definition, Func<JsonElement, string> execute) : ITool
+    {
+        public ToolDefinition Definition => definition;
+
+        public Task<string> ExecuteAsync(JsonElement arguments, CancellationToken cancellationToken) =>
+            Task.FromResult(execute(arguments));
     }
 }

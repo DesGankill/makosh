@@ -49,6 +49,8 @@ static class EnvFile
         return null;
     }
 
+    internal static string? Locate(IEnumerable<string>? extraSearchRoots) => Find(extraSearchRoots);
+
     static Dictionary<string, string> Parse(IEnumerable<string> lines)
     {
         var values = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);

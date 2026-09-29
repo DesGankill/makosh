@@ -1,7 +1,7 @@
 namespace Makosh.Windows;
 
 /// <summary>
-/// Placeholder for Windows adapters (SendInput, screen capture, OCR) after M1.
+/// Windows host TFM marker. Desktop automation lives in <see cref="WindowsDesktop"/>.
 /// </summary>
 public static class WindowsRuntime
 {

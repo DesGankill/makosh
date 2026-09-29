@@ -26,6 +26,7 @@
   <ItemGroup>
     <ProjectReference Include="..\..\src\Makosh\Makosh.csproj" />
     <ProjectReference Include="..\..\src\Makosh.Core\Makosh.Core.csproj" />
+    <ProjectReference Include="..\..\src\Makosh.Windows\Makosh.Windows.csproj" />
   </ItemGroup>
 
 </Project>

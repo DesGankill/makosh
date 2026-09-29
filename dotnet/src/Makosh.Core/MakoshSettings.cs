@@ -13,6 +13,9 @@ public sealed class MakoshSettings
     public string ApiKey { get; init; } = "";
     public string BaseUrl { get; init; } = "https://openrouter.ai/api/v1";
     public string Model { get; init; } = "openai/gpt-4o-mini";
+    public string DataDirectory { get; init; } = "data";
+
+    public string InboxDirectory => Path.Combine(DataDirectory, "inbox");
 
     public bool HasChatModel => !string.IsNullOrWhiteSpace(ApiKey);
 
@@ -29,7 +32,29 @@ public sealed class MakoshSettings
             ApiKey = Read("OPENAI_API_KEY", fileValues, ""),
             BaseUrl = Read("OPENAI_BASE_URL", fileValues, "https://openrouter.ai/api/v1"),
             Model = Read("OPENAI_MODEL", fileValues, "openai/gpt-4o-mini"),
+            DataDirectory = ResolveDataDirectory(extraSearchRoots),
         };
+    }
+
+    static string ResolveDataDirectory(IEnumerable<string>? extraSearchRoots)
+    {
+        var explicitDir = Environment.GetEnvironmentVariable("MAKOSH_DATA_DIR");
+        if (!string.IsNullOrWhiteSpace(explicitDir))
+        {
+            return Path.GetFullPath(explicitDir.Trim());
+        }
+
+        var envFile = EnvFile.Locate(extraSearchRoots);
+        if (envFile is not null)
+        {
+            var repo = Path.GetDirectoryName(Path.GetFullPath(envFile));
+            if (!string.IsNullOrEmpty(repo))
+            {
+                return Path.Combine(repo, "data");
+            }
+        }
+
+        return Path.GetFullPath(Path.Combine(Directory.GetCurrentDirectory(), "data"));
     }
 
     public static bool TokenMatches(string? provided, string expected) =>
