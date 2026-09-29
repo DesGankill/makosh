@@ -10,6 +10,11 @@ public sealed class MakoshSettings
     public int Port { get; init; } = 8787;
     public string Token { get; init; } = "change-me-now";
     public string DeviceName { get; init; } = "PC";
+    public string ApiKey { get; init; } = "";
+    public string BaseUrl { get; init; } = "https://openrouter.ai/api/v1";
+    public string Model { get; init; } = "openai/gpt-4o-mini";
+
+    public bool HasChatModel => !string.IsNullOrWhiteSpace(ApiKey);
 
     public static MakoshSettings Load(IEnumerable<string>? extraSearchRoots = null)
     {
@@ -21,6 +26,9 @@ public sealed class MakoshSettings
             Port = ParsePort(Read("MAKOSH_PORT", fileValues, "8787")),
             Token = Read("MAKOSH_TOKEN", fileValues, "change-me-now"),
             DeviceName = Read("MAKOSH_DEVICE_NAME", fileValues, "PC"),
+            ApiKey = Read("OPENAI_API_KEY", fileValues, ""),
+            BaseUrl = Read("OPENAI_BASE_URL", fileValues, "https://openrouter.ai/api/v1"),
+            Model = Read("OPENAI_MODEL", fileValues, "openai/gpt-4o-mini"),
         };
     }
 
