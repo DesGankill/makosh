@@ -64,7 +64,7 @@ public class HubTests : IClassFixture<MakoshWebFactory>
         ReadyLlm(FakeChatClient.Text("пусто."));
         using var request = new HttpRequestMessage(HttpMethod.Post, "/api/chat")
         {
-            Content = JsonContent.Create(new { text = "" }),
+            Content = JsonContent.Create(new { text = "", speak = false }),
         };
         request.Headers.Add("x-makosh-token", Token);
         var response = await _client.SendAsync(request);
@@ -137,6 +137,134 @@ public class HubTests : IClassFixture<MakoshWebFactory>
         Assert.Equal("reply", reply.GetProperty("type").GetString());
         Assert.Equal("Ответ.", reply.GetProperty("text").GetString());
         Assert.False(reply.GetProperty("speak").GetBoolean());
+        await socket.CloseAsync(WebSocketCloseStatus.NormalClosure, "", CancellationToken.None);
+    }
+
+    [Fact]
+    public async Task Chat_speak_true_calls_tts_without_blocking_json()
+    {
+        _factory.Tts.Reset();
+        _factory.Tts.Delay = TimeSpan.FromMilliseconds(400);
+        ReadyLlm(FakeChatClient.Text("Говори."));
+        using var request = new HttpRequestMessage(HttpMethod.Post, "/api/chat")
+        {
+            Content = JsonContent.Create(new { text = "скажи", speak = true }),
+        };
+        request.Headers.Add("x-makosh-token", Token);
+        var response = await _client.SendAsync(request);
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        Assert.Equal("Говори.", doc.RootElement.GetProperty("reply").GetString());
+        Assert.Empty(_factory.Tts.Spoken);
+        await WaitUntil(() => _factory.Tts.Spoken.Contains("Говори."));
+        Assert.Equal("Говори.", _factory.Tts.Spoken.Single());
+        Assert.Equal(0, _factory.Tts.Utterances.Single().Rate);
+        _factory.Tts.Delay = TimeSpan.Zero;
+    }
+
+    [Fact]
+    public async Task Chat_speak_false_does_not_call_tts()
+    {
+        _factory.Tts.Reset();
+        ReadyLlm(FakeChatClient.Text("Тихо."));
+        using var request = new HttpRequestMessage(HttpMethod.Post, "/api/chat")
+        {
+            Content = JsonContent.Create(new { text = "молчать", speak = false }),
+        };
+        request.Headers.Add("x-makosh-token", Token);
+        var response = await _client.SendAsync(request);
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        await Task.Delay(80);
+        Assert.Empty(_factory.Tts.Spoken);
+    }
+
+    [Fact]
+    public async Task Chat_does_not_call_tts_when_disabled()
+    {
+        _factory.Tts.Reset();
+        var runtime = _factory.Services.GetRequiredService<TtsRuntime>();
+        var previous = runtime.Enabled;
+        runtime.Enabled = false;
+        try
+        {
+            ReadyLlm(FakeChatClient.Text("Без голоса."));
+            using var request = new HttpRequestMessage(HttpMethod.Post, "/api/chat")
+            {
+                Content = JsonContent.Create(new { text = "скажи", speak = true }),
+            };
+            request.Headers.Add("x-makosh-token", Token);
+            var response = await _client.SendAsync(request);
+            Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+            await Task.Delay(80);
+            Assert.Empty(_factory.Tts.Spoken);
+        }
+        finally
+        {
+            runtime.Enabled = previous;
+        }
+    }
+
+    [Fact]
+    public async Task Tts_voices_require_token_and_serialize()
+    {
+        var denied = await _client.GetAsync("/api/tts/voices");
+        Assert.Equal(HttpStatusCode.Unauthorized, denied.StatusCode);
+
+        using var request = new HttpRequestMessage(HttpMethod.Get, "/api/tts/voices");
+        request.Headers.Add("x-makosh-token", Token);
+        var response = await _client.SendAsync(request);
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var root = doc.RootElement;
+        Assert.True(root.GetProperty("enabled").GetBoolean());
+        Assert.Equal("silero", root.GetProperty("engine").GetString());
+        Assert.Equal("Microsoft Irina Desktop", root.GetProperty("selected").GetString());
+        Assert.True(root.GetProperty("pitchSupported").GetBoolean());
+        Assert.Equal(2, root.GetProperty("voices").GetArrayLength());
+        var first = root.GetProperty("voices")[0];
+        Assert.Equal("Microsoft Irina Desktop", first.GetProperty("id").GetString());
+        Assert.Equal("sapi", first.GetProperty("engine").GetString());
+        Assert.Equal("ru-RU", first.GetProperty("culture").GetString());
+        Assert.Equal("Female", first.GetProperty("gender").GetString());
+    }
+
+    [Fact]
+    public async Task Tts_settings_are_clamped()
+    {
+        using var request = new HttpRequestMessage(HttpMethod.Post, "/api/tts/settings")
+        {
+            Content = JsonContent.Create(new { rate = 99, volume = -3, pitch = -40, enabled = true, engine = "sapi", voice = "Microsoft David Desktop" }),
+        };
+        request.Headers.Add("x-makosh-token", Token);
+        var response = await _client.SendAsync(request);
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        Assert.Equal(10, doc.RootElement.GetProperty("rate").GetInt32());
+        Assert.Equal(0, doc.RootElement.GetProperty("volume").GetInt32());
+        Assert.Equal(-10, doc.RootElement.GetProperty("pitch").GetInt32());
+        Assert.Equal("Microsoft David Desktop", doc.RootElement.GetProperty("selected").GetString());
+        Assert.Equal("sapi", doc.RootElement.GetProperty("engine").GetString());
+
+        using var restore = new HttpRequestMessage(HttpMethod.Post, "/api/tts/settings")
+        {
+            Content = JsonContent.Create(new { rate = 0, volume = 100, pitch = 0, engine = "silero", voice = "Microsoft Irina Desktop" }),
+        };
+        restore.Headers.Add("x-makosh-token", Token);
+        (await _client.SendAsync(restore)).EnsureSuccessStatusCode();
+    }
+
+    [Fact]
+    public async Task Websocket_speak_true_calls_tts_after_reply()
+    {
+        _factory.Tts.Reset();
+        ReadyLlm(FakeChatClient.Text("По голосу."));
+        var (socket, _) = await ConnectDevice("ws-tts");
+        await SendJson(socket, new { type = "chat", text = "привет", speak = true });
+        var reply = await ReceiveJson(socket);
+        Assert.Equal("reply", reply.GetProperty("type").GetString());
+        Assert.Equal("По голосу.", reply.GetProperty("text").GetString());
+        Assert.True(reply.GetProperty("speak").GetBoolean());
+        await WaitUntil(() => _factory.Tts.Spoken.Contains("По голосу."));
         await socket.CloseAsync(WebSocketCloseStatus.NormalClosure, "", CancellationToken.None);
     }
 
@@ -378,6 +506,6 @@ public class HubTests : IClassFixture<MakoshWebFactory>
             await Task.Delay(20);
         }
 
-        Assert.Fail("timed out waiting for websocket cleanup");
+        Assert.Fail("timed out waiting for condition");
     }
 }

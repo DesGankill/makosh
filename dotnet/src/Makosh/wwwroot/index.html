@@ -9,15 +9,19 @@
     body { margin: 0; font-family: Segoe UI, sans-serif; background: #101114; color: #eee; }
     header { padding: 16px 20px; border-bottom: 1px solid #2a2d33; }
     main { max-width: 720px; margin: 0 auto; padding: 16px; }
-    #log { min-height: 50vh; white-space: pre-wrap; line-height: 1.4; }
+    #log { min-height: 40vh; white-space: pre-wrap; line-height: 1.4; }
     .me { color: #8ec8ff; }
     .bot { color: #c8f0c2; }
-    .row { display: flex; gap: 8px; margin-top: 12px; }
-    input, button { font-size: 16px; padding: 10px 12px; border-radius: 10px; border: 1px solid #333; background: #1b1d22; color: #eee; }
+    .row { display: flex; gap: 8px; margin-top: 12px; align-items: center; flex-wrap: wrap; }
+    input, button, select { font-size: 16px; padding: 10px 12px; border-radius: 10px; border: 1px solid #333; background: #1b1d22; color: #eee; }
     input { flex: 1; }
     button { cursor: pointer; }
     .mic { background: #3d2a12; }
     .mic.on { background: #6b2; color: #111; }
+    .voice { margin-top: 16px; padding: 12px; border: 1px solid #2a2d33; border-radius: 12px; }
+    .voice label { display: flex; justify-content: space-between; gap: 12px; margin-top: 8px; font-size: 14px; }
+    .voice input[type=range] { flex: 1; }
+    .voice select { width: 100%; }
   </style>
 </head>
 <body>
@@ -30,6 +34,32 @@
     <div class="row">
       <input id="token" type="password" placeholder="токен" />
       <input id="name" placeholder="имя устройства" value="Android" />
+    </div>
+    <div class="voice">
+      <strong>Голос (локальный Windows TTS)</strong>
+      <div class="row">
+        <label><input id="speakOn" type="checkbox" checked /> Говорить ответы</label>
+        <button id="ttsPreview" type="button">Проверить</button>
+      </div>
+      <label>Движок
+        <select id="engine">
+          <option value="silero">Silero</option>
+          <option value="sapi">SAPI</option>
+        </select>
+      </label>
+      <label>Голос
+        <select id="voice"></select>
+      </label>
+      <label>Скорость <span id="rateVal">0</span>
+        <input id="rate" type="range" min="-10" max="10" value="0" />
+      </label>
+      <label>Тон <span id="pitchVal">0</span>
+        <input id="pitch" type="range" min="-10" max="10" value="0" />
+      </label>
+      <label>Громкость <span id="volVal">100</span>
+        <input id="volume" type="range" min="0" max="100" value="100" />
+      </label>
+      <p id="pitchHint" style="font-size:13px;color:#aaa"></p>
     </div>
     <div id="log"></div>
     <div class="row">
@@ -44,11 +74,23 @@
     const tokenEl = document.getElementById("token");
     const nameEl = document.getElementById("name");
     const textEl = document.getElementById("text");
+    const voiceEl = document.getElementById("voice");
+    const rateEl = document.getElementById("rate");
+    const pitchEl = document.getElementById("pitch");
+    const volumeEl = document.getElementById("volume");
+    const speakOnEl = document.getElementById("speakOn");
+    const engineEl = document.getElementById("engine");
     tokenEl.value = localStorage.getItem("makosh_token") || "";
     nameEl.value = localStorage.getItem("makosh_name") || ( /Android/i.test(navigator.userAgent) ? "Android" : "PC" );
+    speakOnEl.checked = localStorage.getItem("makosh_speak") !== "0";
+    rateEl.value = localStorage.getItem("makosh_rate") || "0";
+    pitchEl.value = localStorage.getItem("makosh_pitch") || "0";
+    volumeEl.value = localStorage.getItem("makosh_volume") || "100";
+    engineEl.value = localStorage.getItem("makosh_engine") || "silero";
 
     let ws;
-    function speak(text) {
+    function headers() { return { "x-makosh-token": tokenEl.value, "Content-Type": "application/json" }; }
+    function speakBrowser(text) {
       if (!window.speechSynthesis) return;
       const u = new SpeechSynthesisUtterance(text);
       u.lang = "ru-RU";
@@ -62,9 +104,66 @@
       logEl.appendChild(p);
       logEl.scrollTop = logEl.scrollHeight;
     }
+    function syncLabels() {
+      document.getElementById("rateVal").textContent = rateEl.value;
+      document.getElementById("pitchVal").textContent = pitchEl.value;
+      document.getElementById("volVal").textContent = volumeEl.value;
+    }
+    syncLabels();
+    async function pushSettings() {
+      localStorage.setItem("makosh_speak", speakOnEl.checked ? "1" : "0");
+      localStorage.setItem("makosh_rate", rateEl.value);
+      localStorage.setItem("makosh_pitch", pitchEl.value);
+      localStorage.setItem("makosh_volume", volumeEl.value);
+      localStorage.setItem("makosh_voice", voiceEl.value);
+      localStorage.setItem("makosh_engine", engineEl.value);
+      if (!tokenEl.value) return;
+      await fetch("/api/tts/settings", {
+        method: "POST",
+        headers: headers(),
+        body: JSON.stringify({
+          enabled: speakOnEl.checked,
+          engine: engineEl.value,
+          voice: voiceEl.value,
+          rate: Number(rateEl.value),
+          volume: Number(volumeEl.value),
+          pitch: Number(pitchEl.value)
+        })
+      });
+    }
+    async function loadVoices() {
+      if (!tokenEl.value) return;
+      const res = await fetch("/api/tts/voices", { headers: { "x-makosh-token": tokenEl.value } });
+      if (!res.ok) return;
+      const data = await res.json();
+      if (data.engine) engineEl.value = data.engine;
+      const engine = engineEl.value;
+      voiceEl.innerHTML = "";
+      (data.voices || []).forEach(v => {
+        const voiceEngine = v.engine || "sapi";
+        if (voiceEngine !== engine) return;
+        const opt = document.createElement("option");
+        opt.value = v.id;
+        opt.textContent = `${v.name} (${v.culture || "?"}, ${v.gender || "?"})`;
+        voiceEl.appendChild(opt);
+      });
+      const saved = localStorage.getItem("makosh_voice") || data.selected;
+      if (saved) voiceEl.value = saved;
+      rateEl.value = data.rate ?? rateEl.value;
+      volumeEl.value = data.volume ?? volumeEl.value;
+      pitchEl.value = data.pitch ?? pitchEl.value;
+      document.getElementById("pitchHint").textContent = engine === "silero"
+        ? "Silero v5.5: скорость и тон через SSML модели. Громкость — локально. Если Silero ещё качается, Makosh говорит SAPI."
+        : (data.pitchSupported
+          ? "Тон задаётся через SSML. Классические голоса SAPI обычно меняют тон; часть OneCore-голосов может его игнорировать."
+          : "Этот движок не умеет менять тон.");
+      syncLabels();
+      await pushSettings();
+    }
     function connect() {
       localStorage.setItem("makosh_token", tokenEl.value);
       localStorage.setItem("makosh_name", nameEl.value);
+      loadVoices();
       const proto = location.protocol === "https:" ? "wss" : "ws";
       ws = new WebSocket(`${proto}://${location.host}/ws`);
       ws.onopen = () => {
@@ -83,7 +182,7 @@
         }
         if (msg.type === "reply") {
           add("bot", "Makosh: " + msg.text);
-          if (msg.speak) speak(msg.text);
+          if (msg.speak && /Android/i.test(navigator.userAgent)) speakBrowser(msg.text);
         }
         if (msg.type === "file") {
           add("bot", "Файл: " + msg.name);
@@ -100,12 +199,29 @@
       const text = textEl.value.trim();
       if (!text || !ws || ws.readyState !== 1) return;
       add("me", "Ты: " + text);
-      ws.send(JSON.stringify({ type: "chat", text, speak: true }));
+      ws.send(JSON.stringify({ type: "chat", text, speak: speakOnEl.checked }));
       textEl.value = "";
     }
     document.getElementById("send").onclick = sendChat;
     textEl.addEventListener("keydown", (e) => { if (e.key === "Enter") sendChat(); });
     tokenEl.addEventListener("change", connect);
+    ["engine", "voice", "rate", "pitch", "volume", "speakOn"].forEach(id => {
+      document.getElementById(id).addEventListener("change", async () => {
+        if (id === "engine") {
+          await pushSettings();
+          await loadVoices();
+        } else await pushSettings();
+      });
+      document.getElementById(id).addEventListener("input", syncLabels);
+    });
+    document.getElementById("ttsPreview").onclick = async () => {
+      await pushSettings();
+      await fetch("/api/tts/speak", {
+        method: "POST",
+        headers: headers(),
+        body: JSON.stringify({ text: "Привет, я Макош." })
+      });
+    };
     connect();
 
     const Rec = window.SpeechRecognition || window.webkitSpeechRecognition;

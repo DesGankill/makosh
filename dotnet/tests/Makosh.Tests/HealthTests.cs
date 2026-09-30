@@ -4,6 +4,7 @@ using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.AspNetCore.TestHost;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Hosting;
 
 namespace Makosh.Tests;
@@ -58,6 +59,9 @@ public class HealthTests : IClassFixture<MakoshWebFactory>
         Assert.Contains("Makosh", html, StringComparison.Ordinal);
         Assert.Contains("MAKOSH_TOKEN", html, StringComparison.Ordinal);
         Assert.Contains("/ws", html, StringComparison.Ordinal);
+        Assert.Contains("Говорить ответы", html, StringComparison.Ordinal);
+        Assert.Contains("/api/tts/voices", html, StringComparison.Ordinal);
+        Assert.Contains("Silero", html, StringComparison.Ordinal);
     }
 }
 
@@ -188,6 +192,7 @@ public class SettingsTests
 public class MakoshWebFactory : WebApplicationFactory<Program>
 {
     public FakeChatClient Fake { get; } = new(FakeChatClient.Text("Ответ."));
+    public FakeTtsService Tts { get; } = new();
     public string DataDir { get; }
 
     public MakoshWebFactory()
@@ -214,6 +219,10 @@ public class MakoshWebFactory : WebApplicationFactory<Program>
                 var local = sp.GetRequiredService<LocalToolServices>();
                 return new Agent(memory, settings, Fake, ToolCatalog.MemoryTools(memory).Concat(ToolCatalog.LocalTools(local)));
             });
+            services.RemoveAll<ITtsService>();
+            services.RemoveAll<TtsPlayback>();
+            services.AddSingleton<ITtsService>(Tts);
+            services.AddSingleton(sp => new TtsPlayback(Tts, sp.GetRequiredService<TtsRuntime>()));
         });
     }
 }

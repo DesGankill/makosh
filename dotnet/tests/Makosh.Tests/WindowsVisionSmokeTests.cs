@@ -29,8 +29,8 @@ public class WindowsVisionSmokeTests
 
         try
         {
-            var text = await new WindowsOcrService().RecognizeAsync(image);
-            Assert.NotNull(text);
+            var page = await new WindowsOcrService().RecognizeAsync(image);
+            Assert.NotNull(page.Lines);
         }
         catch (InvalidOperationException ex) when (ex.Message.Contains("OCR", StringComparison.Ordinal))
         {

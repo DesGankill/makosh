@@ -6,6 +6,7 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <RootNamespace>Makosh</RootNamespace>
     <AssemblyName>Makosh</AssemblyName>
+    <UseWindowsForms>true</UseWindowsForms>
   </PropertyGroup>
 
   <ItemGroup>
@@ -19,6 +20,14 @@
   <ItemGroup>
     <ProjectReference Include="..\Makosh.Core\Makosh.Core.csproj" />
     <ProjectReference Include="..\Makosh.Windows\Makosh.Windows.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Content Include="..\Makosh.Windows\silero\silero_worker.py" Link="silero\silero_worker.py">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
+      <ExcludeFromSingleFile>true</ExcludeFromSingleFile>
+    </Content>
   </ItemGroup>
 
 </Project>

@@ -57,17 +57,17 @@ public static class ToolCatalog
     public static ToolDefinition LookScreen { get; } = new()
     {
         Name = "look_screen",
-        Description = "Посмотреть экран ПК. mode=ocr (бесплатно) или vision (облако, лимит)",
+        Description = "Локальный OCR экрана (не картинка). mode=ocr|vision|skip. query — вопрос пользователя, на него и отвечай.",
         ParametersJson =
             """
-            {"type":"object","properties":{"mode":{"type":"string","enum":["ocr","vision"]}},"required":["mode"]}
+            {"type":"object","properties":{"mode":{"type":"string","enum":["ocr","vision","skip"]},"skip_capture":{"type":"boolean"},"query":{"type":"string"}},"required":["mode"]}
             """,
     };
 
     public static ToolDefinition OpenApp { get; } = new()
     {
         Name = "open_app",
-        Description = "Открыть приложение из белого списка",
+        Description = "Открыть приложение по короткому имени из каталога (blender, steam, discord, youtube, calc). Не передавай путь к exe.",
         ParametersJson =
             """
             {"type":"object","properties":{"name":{"type":"string"}},"required":["name"]}
@@ -124,7 +124,10 @@ public static class ToolCatalog
         {
             new DelegateTool(ListDevices, _ => local.Devices.ListText()),
             new DelegateTool(ListFiles, args => local.Paths.ListFiles(args.TryGetProperty("path", out var path) ? path.GetString() ?? "" : "")),
-            new DelegateTool(OpenApp, args => AppLauncher.Open(args.GetProperty("name").GetString() ?? "", local.Apps)),
+            new DelegateTool(OpenApp, args => AppLauncher.Open(
+                args.GetProperty("name").GetString() ?? "",
+                local.Apps,
+                local.AppsCatalog)),
             new DelegateTool(OpenPath, args => PathOpener.Open(args.GetProperty("path").GetString() ?? "", local.Paths, local.Shell)),
             new DelegateTool(TypeText, args => KeyboardComposer.TypeText(args.GetProperty("text").GetString() ?? "", local.Keyboard)),
             new DelegateTool(PressHotkey, args => KeyboardComposer.PressHotkey(args.GetProperty("keys").GetString() ?? "", local.Keyboard)),
@@ -142,7 +145,10 @@ public static class ToolCatalog
             tools.Add(new AsyncDelegateTool(LookScreen, (args, ct) =>
             {
                 var mode = args.TryGetProperty("mode", out var modeEl) ? modeEl.GetString() ?? "ocr" : "ocr";
-                return local.Screen.LookAsync(mode, ct);
+                var skip = args.TryGetProperty("skip_capture", out var skipEl) &&
+                           skipEl.ValueKind is JsonValueKind.True;
+                var query = args.TryGetProperty("query", out var queryEl) ? queryEl.GetString() : null;
+                return local.Screen.LookAsync(mode, skip, query, ct);
             }));
         }
 

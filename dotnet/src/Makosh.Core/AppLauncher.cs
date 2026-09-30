@@ -2,60 +2,51 @@ namespace Makosh.Core;
 
 public static class AppLauncher
 {
-    public static readonly Dictionary<string, string?> AllowedApps = new(StringComparer.Ordinal)
+    public static string Open(string name, IAppHost host, AppCatalog? catalog = null)
     {
-        ["explorer"] = "explorer",
-        ["проводника"] = "explorer",
-        ["notepad"] = "notepad",
-        ["блокнот"] = "notepad",
-        ["calc"] = "calc",
-        ["калькулятор"] = "calc",
-        ["browser"] = "https://",
-        ["браузер"] = null,
-    };
+        catalog ??= AppCatalog.BuiltIn();
+        var raw = (name ?? "").Trim();
+        var denied = $"Приложения «{name}» нет в каталоге. Добавьте имя в data/apps.json (не путь к exe). Сейчас: {catalog.Summary()}.";
 
-    // Matches Python allowed_bins. cmd/mspaint are launchable by binary name; do not widen this set.
-    public static readonly HashSet<string> AllowedBinaries = new(StringComparer.OrdinalIgnoreCase)
-    {
-        "explorer", "notepad", "calc", "mspaint", "cmd",
-    };
-
-    public static string Open(string name, IAppHost host)
-    {
-        var key = name.Trim().ToLowerInvariant();
-        var mapped = AllowedApps.TryGetValue(key, out var value) ? value : key;
-        var denied = $"Приложение «{name}» не в белом списке. Можно: блокнот, проводник, калькулятор, браузер.";
-        if (mapped is null || mapped == "https://")
+        if (raw.StartsWith("http://", StringComparison.OrdinalIgnoreCase) ||
+            raw.StartsWith("https://", StringComparison.OrdinalIgnoreCase))
         {
-            host.OpenUrl("https://google.com");
-            return "Открыл браузер";
+            host.OpenUrl(raw);
+            return $"Открыл {raw}";
         }
 
-        if (mapped.StartsWith("http", StringComparison.Ordinal))
-        {
-            host.OpenUrl(mapped);
-            return $"Открыл {mapped}";
-        }
-
-        if (key.StartsWith("http://", StringComparison.Ordinal) || key.StartsWith("https://", StringComparison.Ordinal))
-        {
-            host.OpenUrl(name.Trim());
-            return $"Открыл {name}";
-        }
-
-        if (mapped.Contains('\\') || mapped.Contains('/') || mapped.Contains(':'))
+        if (raw.Contains('\\') || raw.Contains('/') || raw.Contains(':'))
         {
             return denied;
         }
 
-        var target = mapped.Contains('\\') ? Path.GetFileName(mapped) : mapped;
-        if (!AllowedBinaries.Contains(target) && !AllowedApps.ContainsKey(key))
+        var entry = catalog.Find(raw);
+        if (entry is null)
         {
             return denied;
         }
 
-        host.StartProcess(mapped);
-        return $"Запустил {mapped}";
+        if (string.Equals(entry.Kind, "url", StringComparison.OrdinalIgnoreCase) ||
+            entry.Target.StartsWith("http", StringComparison.OrdinalIgnoreCase))
+        {
+            host.OpenUrl(entry.Target);
+            return entry.Id == "browser" ? "Открыл браузер" : $"Открыл {entry.Target}";
+        }
+
+        var target = entry.Target;
+        if (target.Contains('\\') || target.Contains('/'))
+        {
+            if (!Path.IsPathRooted(target) || !File.Exists(target))
+            {
+                return $"Приложение «{entry.Id}» прописано в списке, но файл не найден: {target}";
+            }
+
+            host.StartProcess(target);
+            return $"Запустил {entry.Id}";
+        }
+
+        host.StartProcess(target);
+        return $"Запустил {target}";
     }
 }
 

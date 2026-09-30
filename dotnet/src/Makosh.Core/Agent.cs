@@ -15,6 +15,7 @@ public sealed class Agent
     readonly IChatClient? _chat;
     readonly IReadOnlyList<ITool> _tools;
     readonly Dictionary<string, ITool> _byName;
+    readonly SemaphoreSlim _run = new(1, 1);
 
     public Agent(Memory memory, MakoshSettings settings, IChatClient? chatClient, IEnumerable<ITool> tools)
     {
@@ -44,16 +45,23 @@ public sealed class Agent
             tools.AddRange(extraTools);
         }
 
-        IChatClient? chat = null;
-        if (settings.HasChatModel)
-        {
-            chat = new OpenAIChatClient(settings);
-        }
-
-        return new Agent(memory, settings, chat, tools);
+        return new Agent(memory, settings, LlmProviderFactory.Create(settings), tools);
     }
 
     public async Task<string> HandleAsync(string text, string speaker, CancellationToken cancellationToken = default)
+    {
+        await _run.WaitAsync(cancellationToken);
+        try
+        {
+            return await HandleCoreAsync(text, speaker, cancellationToken);
+        }
+        finally
+        {
+            _run.Release();
+        }
+    }
+
+    async Task<string> HandleCoreAsync(string text, string speaker, CancellationToken cancellationToken)
     {
         _memory.AddTurn("user", $"[{speaker}] {text}");
         if (_chat is null)
@@ -77,14 +85,23 @@ public sealed class Agent
         for (var round = 0; round < MaxToolRounds; round++)
         {
             cancellationToken.ThrowIfCancellationRequested();
-            var response = await _chat.CompleteAsync(
-                new LlmRequest
-                {
-                    Model = _settings.Model,
-                    Messages = messages,
-                    Tools = toolDefs,
-                },
-                cancellationToken);
+            LlmResponse response;
+            try
+            {
+                response = await _chat.CompleteAsync(
+                    new LlmRequest
+                    {
+                        Model = _settings.Model,
+                        Messages = messages,
+                        Tools = toolDefs,
+                    },
+                    cancellationToken);
+            }
+            catch (LlmException ex)
+            {
+                _memory.AddTurn("assistant", ex.UserMessage);
+                return ex.UserMessage;
+            }
 
             if (response.ToolCalls.Count == 0)
             {
@@ -138,6 +155,11 @@ public sealed class Agent
         if (!_byName.TryGetValue(name, out var tool))
         {
             return $"Неизвестный инструмент: {name}";
+        }
+
+        if (ToolPermissions.Level(name) == ToolAccess.Blocked)
+        {
+            return $"Инструмент {name} запрещён политикой Makosh.";
         }
 
         try

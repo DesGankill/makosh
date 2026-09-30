@@ -100,7 +100,7 @@ public class ScreenLookTests
         var look = Make(out _, out _, out var jpeg, out var vision, out var limiter);
         var text = await look.LookAsync("ocr");
         Assert.Contains("без облака", text, StringComparison.Ordinal);
-        Assert.Contains("Привет Makosh", text, StringComparison.Ordinal);
+        Assert.Contains("1. Привет Makosh", text, StringComparison.Ordinal);
         Assert.False(vision.Called);
         Assert.Null(jpeg.LastImage);
         Assert.Equal(6, limiter.CallsLeft());
@@ -118,8 +118,20 @@ public class ScreenLookTests
             Settings(),
             new FakeVisionClient());
         var text = await look.LookAsync("ocr");
-        Assert.Contains("OCR ничего не разобрал", text, StringComparison.Ordinal);
-        Assert.Contains("облачное зрение недоступно", text, StringComparison.Ordinal);
+        Assert.Contains("OCR ничего уверенно не разобрал", text, StringComparison.Ordinal);
+        Assert.Contains("не выдумываю интерфейс", text, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Skip_mode_does_not_capture_or_call_vision()
+    {
+        var look = Make(out var capture, out var ocr, out var jpeg, out var vision, out _);
+        var text = await look.LookAsync("skip");
+        Assert.Contains("не делаю", text, StringComparison.Ordinal);
+        Assert.Equal(0, capture.Calls);
+        Assert.Equal(0, ocr.Calls);
+        Assert.False(vision.Called);
+        Assert.Null(jpeg.LastImage);
     }
 
     [Fact]
@@ -135,7 +147,7 @@ public class ScreenLookTests
         var text = await look.LookAsync("vision");
         Assert.False(vision.Called);
         Assert.Null(jpeg.LastImage);
-        Assert.Contains("не умеет смотреть картинки", text, StringComparison.Ordinal);
+        Assert.Contains("не принимает картинки", text, StringComparison.Ordinal);
         Assert.Contains("Привет Makosh", text, StringComparison.Ordinal);
     }
 
@@ -151,7 +163,7 @@ public class ScreenLookTests
             Settings(visionModel: "deepseek/deepseek-chat"));
         var text = await look.LookAsync("vision");
         Assert.False(vision.Called);
-        Assert.Contains("не умеет смотреть картинки", text, StringComparison.Ordinal);
+        Assert.Contains("не принимает картинки", text, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -168,6 +180,8 @@ public class ScreenLookTests
         Assert.Contains("на экране код", text, StringComparison.Ordinal);
         Assert.Contains("осталось в этом часе: 5", text, StringComparison.Ordinal);
         Assert.Contains("Привет Makosh", vision.LastPrompt, StringComparison.Ordinal);
+        Assert.Contains("Обнаружено", vision.LastPrompt, StringComparison.Ordinal);
+        Assert.Contains("не добавляй", vision.LastPrompt, StringComparison.OrdinalIgnoreCase);
         Assert.Equal("openai/gpt-4o-mini", vision.LastModel);
     }
 
@@ -176,9 +190,9 @@ public class ScreenLookTests
     {
         var look = Make(out _, out _, out var jpeg, out var vision, out _, Settings(apiKey: ""));
         var text = await look.LookAsync("vision");
-        Assert.Equal("Нет ключа API для зрения.", text);
+        Assert.Equal("Нет ключа API для зрения. OCR:\n1. Привет Makosh", text);
         Assert.False(vision.Called);
-        Assert.NotNull(jpeg.LastImage);
+        Assert.Null(jpeg.LastImage);
     }
 
     [Fact]
@@ -238,7 +252,7 @@ public class ScreenLookTests
 
     sealed class ThrowingOcr : IOcrService
     {
-        public Task<string> RecognizeAsync(ScreenImage image, CancellationToken cancellationToken = default) =>
+        public Task<OcrPage> RecognizeAsync(ScreenImage image, CancellationToken cancellationToken = default) =>
             throw new InvalidOperationException("ocr failed");
     }
 }

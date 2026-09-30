@@ -30,7 +30,7 @@ public static class HubEndpoints
             return Results.Json(new { ok = true });
         });
 
-        app.MapPost("/api/chat", async (ChatBody? body, HttpContext http, Agent agent, MakoshSettings settings) =>
+        app.MapPost("/api/chat", async (ChatBody? body, HttpContext http, Agent agent, MakoshSettings settings, TtsPlayback tts) =>
         {
             if (!Authorized(http, settings))
             {
@@ -46,6 +46,7 @@ public static class HubEndpoints
             {
                 var speaker = string.IsNullOrWhiteSpace(body.DeviceName) ? "web" : body.DeviceName;
                 var reply = await agent.HandleAsync(body.Text ?? "", speaker);
+                tts.SpeakIfRequested(body.Speak, reply);
                 return Results.Json(new { reply });
             }
             catch (Exception ex)
@@ -53,6 +54,95 @@ public static class HubEndpoints
                 LogHub(http).LogError(ex, "Ошибка обработки сообщения");
                 return Results.Json(new { detail = ChatFailureReply }, statusCode: StatusCodes.Status500InternalServerError);
             }
+        });
+
+        app.MapGet("/api/tts/voices", (HttpContext http, MakoshSettings settings, ITtsService tts, TtsRuntime runtime) =>
+        {
+            if (!Authorized(http, settings))
+            {
+                return Unauthorized();
+            }
+
+            var voices = tts.GetVoices();
+            var selected = TtsVoicePicker.Select(voices, runtime.Voice);
+            return Results.Json(new
+            {
+                enabled = runtime.Enabled,
+                engine = TtsEngines.Normalize(runtime.Engine),
+                selected = selected?.Id ?? runtime.Voice,
+                pitchSupported = tts.SupportsPitch,
+                rate = runtime.Rate,
+                volume = runtime.Volume,
+                pitch = runtime.Pitch,
+                voices,
+            });
+        });
+
+        app.MapPost("/api/tts/settings", (TtsSettingsBody? body, HttpContext http, MakoshSettings settings, TtsRuntime runtime, ITtsService tts) =>
+        {
+            if (!Authorized(http, settings))
+            {
+                return Unauthorized();
+            }
+
+            if (body is null)
+            {
+                return Results.Json(new { detail = "Некорректный JSON" }, statusCode: StatusCodes.Status400BadRequest);
+            }
+
+            if (body.Enabled is not null)
+            {
+                runtime.Enabled = body.Enabled.Value;
+            }
+
+            if (body.Engine is not null)
+            {
+                runtime.Engine = TtsEngines.Normalize(body.Engine);
+            }
+
+            if (body.Voice is not null)
+            {
+                runtime.Voice = body.Voice;
+            }
+
+            if (body.Rate is not null)
+            {
+                runtime.Rate = TtsLimits.ClampRate(body.Rate.Value);
+            }
+
+            if (body.Volume is not null)
+            {
+                runtime.Volume = TtsLimits.ClampVolume(body.Volume.Value);
+            }
+
+            if (body.Pitch is not null)
+            {
+                runtime.Pitch = TtsLimits.ClampPitch(body.Pitch.Value);
+            }
+
+            var selected = TtsVoicePicker.Select(tts.GetVoices(), runtime.Voice);
+            return Results.Json(new
+            {
+                enabled = runtime.Enabled,
+                engine = TtsEngines.Normalize(runtime.Engine),
+                selected = selected?.Id ?? runtime.Voice,
+                rate = runtime.Rate,
+                volume = runtime.Volume,
+                pitch = runtime.Pitch,
+                pitchSupported = tts.SupportsPitch,
+            });
+        });
+
+        app.MapPost("/api/tts/speak", (TtsSpeakBody? body, HttpContext http, MakoshSettings settings, TtsPlayback tts) =>
+        {
+            if (!Authorized(http, settings))
+            {
+                return Unauthorized();
+            }
+
+            var text = body?.Text ?? "";
+            tts.SpeakIfRequested(true, text);
+            return Results.Json(new { ok = true });
         });
 
         app.MapPost("/api/upload/{deviceId}", async (string deviceId, HttpContext http, MakoshSettings settings) =>
@@ -134,6 +224,7 @@ public static class HubEndpoints
         var settings = http.RequestServices.GetRequiredService<MakoshSettings>();
         var devices = http.RequestServices.GetRequiredService<DeviceRegistry>();
         var agent = http.RequestServices.GetRequiredService<Agent>();
+        var tts = http.RequestServices.GetRequiredService<TtsPlayback>();
         using var socket = await http.WebSockets.AcceptWebSocketAsync();
         var sessionId = Guid.Empty;
         var deviceId = "";
@@ -238,6 +329,7 @@ public static class HubEndpoints
                         ["text"] = reply,
                         ["speak"] = speak,
                     }, http.RequestAborted);
+                    tts.SpeakIfRequested(speak, reply);
                 }
             }
         }

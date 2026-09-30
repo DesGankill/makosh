@@ -1,18 +1,22 @@
 using System.ClientModel;
+using System.Net.Http;
 using OpenAI;
 using OpenAI.Chat;
 
 namespace Makosh.Core;
 
-public sealed class OpenAIChatClient : IChatClient, IVisionClient
+public sealed class OpenAIChatClient : ILLMProvider, IVisionClient
 {
     readonly ChatClient _client;
     readonly MakoshSettings _settings;
     readonly OpenAIClientOptions _options;
     readonly ApiKeyCredential _credential;
 
+    public string Id { get; }
+
     public OpenAIChatClient(MakoshSettings settings)
     {
+        Id = string.IsNullOrWhiteSpace(settings.LlmProvider) ? LlmProviders.OpenRouter : settings.LlmProvider;
         _settings = settings;
         _options = new OpenAIClientOptions();
         if (!string.IsNullOrWhiteSpace(settings.BaseUrl) &&
@@ -32,9 +36,16 @@ public sealed class OpenAIChatClient : IChatClient, IVisionClient
         var message = new UserChatMessage(
             ChatMessageContentPart.CreateTextPart(prompt),
             ChatMessageContentPart.CreateImagePart(BinaryData.FromBytes(jpeg), "image/jpeg"));
-        var completion = await client.CompleteChatAsync([message], cancellationToken: cancellationToken);
-        var parts = completion.Value.Content;
-        return parts.Count == 0 ? "" : parts[0].Text ?? "";
+        try
+        {
+            var completion = await client.CompleteChatAsync([message], cancellationToken: cancellationToken);
+            var parts = completion.Value.Content;
+            return parts.Count == 0 ? "" : parts[0].Text ?? "";
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            throw Map(ex);
+        }
     }
 
     public async Task<LlmResponse> CompleteAsync(LlmRequest request, CancellationToken cancellationToken)
@@ -52,8 +63,16 @@ public sealed class OpenAIChatClient : IChatClient, IVisionClient
                 BinaryData.FromString(tool.ParametersJson)));
         }
 
-        var completion = await _client.CompleteChatAsync(messages, options, cancellationToken);
-        var message = completion.Value;
+        ChatCompletion message;
+        try
+        {
+            var completion = await _client.CompleteChatAsync(messages, options, cancellationToken);
+            message = completion.Value;
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            throw Map(ex);
+        }
         var calls = new List<LlmToolCall>();
         foreach (var call in message.ToolCalls)
         {
@@ -86,4 +105,31 @@ public sealed class OpenAIChatClient : IChatClient, IVisionClient
             "tool" => new ToolChatMessage(message.ToolCallId ?? "", message.Content),
             _ => new UserChatMessage(message.Content),
         };
+
+    static LlmException Map(Exception ex)
+    {
+        if (ex is LlmException llm)
+        {
+            return llm;
+        }
+
+        if (ex is ClientResultException client)
+        {
+            return LlmException.FromHttpStatus(client.Status, client.Message);
+        }
+
+        if (ex is HttpRequestException or IOException)
+        {
+            return LlmException.Network(ex);
+        }
+
+        var text = ex.Message ?? "";
+        if (text.Contains("429", StringComparison.Ordinal) ||
+            text.Contains("Too Many Requests", StringComparison.OrdinalIgnoreCase))
+        {
+            return LlmException.FromHttpStatus(429, text);
+        }
+
+        return new LlmException(LlmErrorKind.Other, "Модель не ответила. Подробности в логе сервера.", text, ex);
+    }
 }

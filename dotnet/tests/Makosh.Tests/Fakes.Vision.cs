@@ -39,10 +39,10 @@ public sealed class FakeOcrService : IOcrService
 
     public int Calls { get; private set; }
 
-    public Task<string> RecognizeAsync(ScreenImage image, CancellationToken cancellationToken = default)
+    public Task<OcrPage> RecognizeAsync(ScreenImage image, CancellationToken cancellationToken = default)
     {
         Calls++;
-        return Task.FromResult(_ocr(image));
+        return Task.FromResult(OcrPage.FromText(_ocr(image)));
     }
 }
 

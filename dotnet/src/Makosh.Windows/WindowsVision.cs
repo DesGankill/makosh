@@ -10,7 +10,7 @@ namespace Makosh.Windows;
 
 public sealed class WindowsOcrService : IOcrService
 {
-    public async Task<string> RecognizeAsync(ScreenImage image, CancellationToken cancellationToken = default)
+    public async Task<OcrPage> RecognizeAsync(ScreenImage image, CancellationToken cancellationToken = default)
     {
         var engine = OcrEngine.TryCreateFromUserProfileLanguages()
                      ?? TryLanguage("ru")
@@ -23,7 +23,11 @@ public sealed class WindowsOcrService : IOcrService
 
         using var bitmap = ToSoftwareBitmap(image);
         var result = await engine.RecognizeAsync(bitmap).AsTask(cancellationToken);
-        return string.Join("\n", result.Lines.Select(line => line.Text)).Trim();
+        var lines = result.Lines
+            .Select(line => line.Text.Trim())
+            .Where(text => text.Length > 0)
+            .ToList();
+        return new OcrPage { Lines = lines };
     }
 
     static OcrEngine? TryLanguage(string tag)

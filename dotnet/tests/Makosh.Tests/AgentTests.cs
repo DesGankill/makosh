@@ -231,6 +231,16 @@ public sealed class AgentTests : IDisposable
         Assert.Equal(Agent.MissingApiKeyReply, await agent.HandleAsync("hi", "web"));
     }
 
+    [Fact]
+    public async Task Rate_limit_becomes_a_user_reply_not_a_dead_agent()
+    {
+        var fake = new FakeChatClient(LlmException.FromHttpStatus(429));
+        var (agent, memory, _) = MakeAgent(fake);
+        var reply = await agent.HandleAsync("привет", "web");
+        Assert.Contains("429", reply, StringComparison.Ordinal);
+        Assert.Equal(reply, memory.RecentTurns()[^1].Content);
+    }
+
     sealed class BoomTool : ITool
     {
         public ToolDefinition Definition { get; } = new()

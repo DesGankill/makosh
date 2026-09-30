@@ -71,6 +71,21 @@ public static class HubJson
     };
 }
 
+public sealed class TtsSettingsBody
+{
+    public bool? Enabled { get; set; }
+    public string? Engine { get; set; }
+    public string? Voice { get; set; }
+    public int? Rate { get; set; }
+    public int? Volume { get; set; }
+    public int? Pitch { get; set; }
+}
+
+public sealed class TtsSpeakBody
+{
+    public string Text { get; set; } = "Привет, я Макош.";
+}
+
 public sealed class ChatBody
 {
     public string Text { get; set; } = "";

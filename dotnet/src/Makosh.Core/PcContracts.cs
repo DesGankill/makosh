@@ -25,4 +25,5 @@ public sealed class LocalToolServices
     public required DeviceRegistry Devices { get; init; }
     public IFileSender? Files { get; init; }
     public ScreenLook? Screen { get; init; }
+    public AppCatalog AppsCatalog { get; init; } = AppCatalog.BuiltIn();
 }

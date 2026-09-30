@@ -31,7 +31,7 @@ public class OpenAppTests
     public void Unknown_app_is_rejected()
     {
         var result = AppLauncher.Open("definitely-not-an-app", _host);
-        Assert.Contains("не в белом списке", result, StringComparison.Ordinal);
+        Assert.Contains("нет в каталоге", result, StringComparison.Ordinal);
         Assert.Empty(_host.Processes);
         Assert.Empty(_host.Urls);
     }
@@ -39,7 +39,7 @@ public class OpenAppTests
     [Fact]
     public void Wrong_name_is_rejected()
     {
-        Assert.Contains("не в белом списке", AppLauncher.Open("notpad", _host), StringComparison.Ordinal);
+        Assert.Contains("нет в каталоге", AppLauncher.Open("notpad", _host), StringComparison.Ordinal);
         Assert.Empty(_host.Processes);
     }
 
@@ -48,7 +48,7 @@ public class OpenAppTests
     [InlineData("   ")]
     public void Empty_name_is_rejected(string name)
     {
-        Assert.Contains("не в белом списке", AppLauncher.Open(name, _host), StringComparison.Ordinal);
+        Assert.Contains("нет в каталоге", AppLauncher.Open(name, _host), StringComparison.Ordinal);
         Assert.Empty(_host.Processes);
         Assert.Empty(_host.Urls);
     }
@@ -61,7 +61,7 @@ public class OpenAppTests
     public void Path_is_not_accepted_as_an_app_name(string name)
     {
         var result = AppLauncher.Open(name, _host);
-        Assert.Contains("не в белом списке", result, StringComparison.Ordinal);
+        Assert.Contains("нет в каталоге", result, StringComparison.Ordinal);
         Assert.Empty(_host.Processes);
         Assert.Empty(_host.Urls);
     }
@@ -85,8 +85,27 @@ public class OpenAppTests
     [Fact]
     public void Powershell_is_rejected()
     {
-        Assert.Contains("не в белом списке", AppLauncher.Open("powershell", _host), StringComparison.Ordinal);
-        Assert.Contains("не в белом списке", AppLauncher.Open("pwsh", _host), StringComparison.Ordinal);
+        Assert.Contains("нет в каталоге", AppLauncher.Open("powershell", _host), StringComparison.Ordinal);
+        Assert.Contains("нет в каталоге", AppLauncher.Open("pwsh", _host), StringComparison.Ordinal);
         Assert.Empty(_host.Processes);
+    }
+
+    [Fact]
+    public void Registered_blender_alias_is_launchable()
+    {
+        Assert.Equal("Запустил blender", AppLauncher.Open("Blender", _host));
+        Assert.Equal(["blender"], _host.Processes);
+    }
+
+    [Fact]
+    public void Extra_catalog_entry_is_launchable()
+    {
+        var catalog = AppCatalog.From(
+        [
+            ..AppCatalog.DefaultApps(),
+            new AppEntry { Id = "code", Aliases = ["vscode"], Kind = "process", Target = "Code" },
+        ]);
+        Assert.Equal("Запустил Code", AppLauncher.Open("vscode", _host, catalog));
+        Assert.Equal(["Code"], _host.Processes);
     }
 }
